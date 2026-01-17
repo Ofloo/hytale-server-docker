@@ -58,7 +58,7 @@ download_server() {
       LogError "Failed to download Hytale Downloader"
       return 1
     }
-    
+
     mkdir -p "$DOWNLOADER_DIR"
     unzip -o -q "$DOWNLOADER_ZIP" -d "$DOWNLOADER_DIR" || {
       LogError "Failed to extract Hytale Downloader"
@@ -66,60 +66,68 @@ download_server() {
     }
     rm "$DOWNLOADER_ZIP"
   fi
-  
-  # Find the hytale-downloader executable
+
+  # Detect architecture and set runner if needed
+  ARCH=$(uname -m)
   DOWNLOADER_EXEC=$(find "$DOWNLOADER_DIR" -name "hytale-downloader-linux-*" -type f | head -1)
   if [ -z "$DOWNLOADER_EXEC" ]; then
     LogError "Could not find hytale-downloader executable"
     return 1
   fi
-  
+
   chmod +x "$DOWNLOADER_EXEC"
+
+  RUNNER=""
+  if [ "$ARCH" = "aarch64" ]; then
+    RUNNER="qemu-x86_64-static"
+    LogInfo "Detected ARM64, running x86_64 downloader via QEMU"
+  fi
+
   cd "$(dirname "$DOWNLOADER_EXEC")" || exit 1
-  
+
   # Check latest available version
   LogInfo "Checking latest version..."
   local latest_version
-  latest_version=$(./$(basename "$DOWNLOADER_EXEC") -print-version)
-  
+  latest_version=$($RUNNER ./$(basename "$DOWNLOADER_EXEC") -print-version 2>/dev/null)
+
   if [ -z "$latest_version" ]; then
     LogError "Failed to get latest version"
     return 1
   fi
-  
+
   LogInfo "Latest available version: $latest_version"
-  
+
   # Check current installed version
   local current_version=""
   if [ -f "$VERSION_FILE" ]; then
     current_version=$(cat "$VERSION_FILE")
     LogInfo "Current installed version: $current_version"
   fi
-  
+
   # Compare versions
   if [ -f "$SERVER_FILES/Server/HytaleServer.jar" ] && [ "$current_version" = "$latest_version" ]; then
     LogSuccess "Server is up to date (version $latest_version)"
     return 0
   fi
-  
+
   # Download needed
   if [ -f "$SERVER_FILES/Server/HytaleServer.jar" ]; then
     LogInfo "Update available: $current_version -> $latest_version"
   else
     LogInfo "First time setup - downloading server files..."
   fi
-  
+
   LogInfo "Downloading server files (this may take a while)..."
-  ./$(basename "$DOWNLOADER_EXEC") -download-path "$SERVER_FILES/game.zip" || {
+  $RUNNER ./$(basename "$DOWNLOADER_EXEC") -download-path "$SERVER_FILES/game.zip" || {
     LogError "Failed to download server files"
     return 1
   }
-  
+
   # Check if authentication was successful
   if [ -f "$DOWNLOADER_DIR/.hytale-downloader-credentials.json" ]; then
     LogSuccess "Hytale Authentication Successful"
   fi
-  
+
   # Extract the files
   LogInfo "Extracting server files..."
   cd "$SERVER_FILES" || exit 1
@@ -128,7 +136,7 @@ download_server() {
     return 1
   }
   rm game.zip
-  
+
   # Verify files exist
   if [ ! -f "$SERVER_FILES/Server/HytaleServer.jar" ]; then
     LogError "HytaleServer.jar not found after download"
@@ -155,21 +163,21 @@ download_server() {
 shutdown_server() {
     local return_val=0
     LogAction "Attempting graceful server shutdown"
-    
+
     # Find the process ID
     local pid=$(pgrep -f HytaleServer.jar)
-    
+
     if [ -n "$pid" ]; then
         # Send SIGTERM to allow graceful shutdown
         kill -SIGTERM "$pid"
-        
+
         # Wait up to 30 seconds for process to exit
         local count=0
         while [ $count -lt 30 ] && kill -0 "$pid" 2>/dev/null; do
             sleep 1
             count=$((count + 1))
         done
-        
+
         # Check if process is still running
         if kill -0 "$pid" 2>/dev/null; then
             LogWarn "Server did not shutdown gracefully, forcing shutdown"
@@ -181,6 +189,6 @@ shutdown_server() {
         LogWarn "Server process not found"
         return_val=1
     fi
-    
+
     return "$return_val"
 }

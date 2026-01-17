@@ -1,6 +1,7 @@
 # BUILD THE HYTALE SERVER IMAGE
 FROM eclipse-temurin:25-jdk
 
+# Install dependencies + qemu
 RUN apt-get update && apt-get install -y --no-install-recommends \
     gettext-base \
     procps \
@@ -9,6 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     unzip \
     wget \
     ca-certificates \
+    qemu-user-static \
+    binfmt-support \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
